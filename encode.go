@@ -294,6 +294,12 @@ type EncOptions struct {
 
 	// TagsMd specifies whether to allow CBOR tags (major type 6).
 	TagsMd TagsMode
+
+	// HandleTagForMarshaler activates automatic handling of CBOR tags for types implementing the Marshaler interface.
+	// By default, a Marshaler is expected to write CBOR tags itself in its MarshalCBOR() method. Setting this option to
+	// true instructs the encoder to write the tags if required by the configured TagSet (just as it is done for all
+	// types that don't implement the Marshaler interface).
+	HandleTagForMarshaler bool
 }
 
 // CanonicalEncOptions returns EncOptions for "Canonical CBOR" encoding,
@@ -471,15 +477,16 @@ func (opts EncOptions) encMode() (*encMode, error) {
 		return nil, errors.New("cbor: cannot set TagsMd to TagsForbidden when TimeTag is EncTagRequired")
 	}
 	em := encMode{
-		sort:          opts.Sort,
-		shortestFloat: opts.ShortestFloat,
-		nanConvert:    opts.NaNConvert,
-		infConvert:    opts.InfConvert,
-		bigIntConvert: opts.BigIntConvert,
-		time:          opts.Time,
-		timeTag:       opts.TimeTag,
-		indefLength:   opts.IndefLength,
-		tagsMd:        opts.TagsMd,
+		sort:                  opts.Sort,
+		shortestFloat:         opts.ShortestFloat,
+		nanConvert:            opts.NaNConvert,
+		infConvert:            opts.InfConvert,
+		bigIntConvert:         opts.BigIntConvert,
+		time:                  opts.Time,
+		timeTag:               opts.TimeTag,
+		indefLength:           opts.IndefLength,
+		tagsMd:                opts.TagsMd,
+		handleTagForMarshaler: opts.HandleTagForMarshaler,
 	}
 	return &em, nil
 }
@@ -492,16 +499,17 @@ type EncMode interface {
 }
 
 type encMode struct {
-	tags          tagProvider
-	sort          SortMode
-	shortestFloat ShortestFloatMode
-	nanConvert    NaNConvertMode
-	infConvert    InfConvertMode
-	bigIntConvert BigIntConvertMode
-	time          TimeMode
-	timeTag       EncTagMode
-	indefLength   IndefLengthMode
-	tagsMd        TagsMode
+	tags                  tagProvider
+	sort                  SortMode
+	shortestFloat         ShortestFloatMode
+	nanConvert            NaNConvertMode
+	infConvert            InfConvertMode
+	bigIntConvert         BigIntConvertMode
+	time                  TimeMode
+	timeTag               EncTagMode
+	indefLength           IndefLengthMode
+	tagsMd                TagsMode
+	handleTagForMarshaler bool
 }
 
 var defaultEncMode = &encMode{}
@@ -509,15 +517,16 @@ var defaultEncMode = &encMode{}
 // EncOptions returns user specified options used to create this EncMode.
 func (em *encMode) EncOptions() EncOptions {
 	return EncOptions{
-		Sort:          em.sort,
-		ShortestFloat: em.shortestFloat,
-		NaNConvert:    em.nanConvert,
-		InfConvert:    em.infConvert,
-		BigIntConvert: em.bigIntConvert,
-		Time:          em.time,
-		TimeTag:       em.timeTag,
-		IndefLength:   em.indefLength,
-		TagsMd:        em.tagsMd,
+		Sort:                  em.sort,
+		ShortestFloat:         em.shortestFloat,
+		NaNConvert:            em.nanConvert,
+		InfConvert:            em.infConvert,
+		BigIntConvert:         em.bigIntConvert,
+		Time:                  em.time,
+		TimeTag:               em.timeTag,
+		IndefLength:           em.indefLength,
+		TagsMd:                em.tagsMd,
+		HandleTagForMarshaler: em.handleTagForMarshaler,
 	}
 }
 
@@ -1221,6 +1230,11 @@ func encodeMarshalerType(e *encoderBuffer, em *encMode, v reflect.Value) error {
 	data, err := m.MarshalCBOR()
 	if err != nil {
 		return err
+	}
+	if em.handleTagForMarshaler {
+		if b := em.encTagBytes(v.Type()); b != nil {
+			e.Write(b)
+		}
 	}
 	e.Write(data)
 	return nil

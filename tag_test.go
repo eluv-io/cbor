@@ -190,6 +190,38 @@ func TestTagBinaryMarshalerUnmarshaler(t *testing.T) {
 	testRoundTrip(t, testCases, em, dm)
 }
 
+func TestTagMarshalerUnmarshaler(t *testing.T) {
+	// Use number2 and stru2 as Marshaler/Unmarshaler test objects
+	t1 := reflect.TypeOf((*number2)(nil))
+	t2 := reflect.TypeOf(stru2{})
+
+	tags := NewTagSet()
+	if err := tags.Add(TagOptions{EncTag: EncTagRequired, DecTag: DecTagRequired}, t1, 123); err != nil {
+		t.Fatalf("TagSet.Add(%s, %d) returned error %v", t1, 123, err)
+	}
+	if err := tags.Add(TagOptions{EncTag: EncTagRequired, DecTag: DecTagRequired}, t2, 124); err != nil {
+		t.Fatalf("TagSet.Add(%s, %d) returned error %v", t2, 124, err)
+	}
+
+	em, _ := EncOptions{HandleTagForMarshaler: true}.EncModeWithTags(tags)
+	dm, _ := DecOptions{HandleTagForUnmarshaler: false}.DecModeWithTags(tags)
+
+	testCases := []roundTripTest{
+		{
+			name:         "primitive obj",
+			obj:          number2(1234567890),
+			wantCborData: hexDecode("d87ba1636e756d1a499602d2"), // 123({"num": 1234567890})
+		},
+		{
+			name:         "struct obj",
+			obj:          stru2{a: "a", b: "b", c: "c"},
+			wantCborData: hexDecode("d87c83616161626163"), // 124(["a", "b", "c"])
+		},
+	}
+
+	testRoundTrip(t, testCases, em, dm)
+}
+
 func TestTagStruct(t *testing.T) {
 	type T struct {
 		S string `cbor:"s,omitempty"`
@@ -1400,7 +1432,7 @@ func (n *number3) UnmarshalCBOR(data []byte) (err error) {
 	return nil
 }
 
-func TestDecodeRegisterTagForUnmarshaler(t *testing.T) {
+func TestDecodeRegisteredTagForUnmarshaler(t *testing.T) {
 	typ := reflect.TypeOf(number3(0))
 
 	tags := NewTagSet()
@@ -1431,6 +1463,51 @@ func TestDecodeRegisterTagForUnmarshaler(t *testing.T) {
 
 	// Decode to registered type.
 	var v2 number3
+	if err = dm.Unmarshal(cborData, &v2); err != nil {
+		t.Errorf("Unmarshal() returned error %v", err)
+	}
+	if !reflect.DeepEqual(wantObj, v2) {
+		t.Errorf("Unmarshal() returned different values: %v, %v", wantObj, v2)
+	}
+	b, err = em.Marshal(v2)
+	if err != nil {
+		t.Errorf("Marshal(%v) returned error %v", v2, err)
+	} else if !bytes.Equal(b, cborData) {
+		t.Errorf("Marshal(%v) returned %v, want %v", v2, b, cborData)
+	}
+}
+
+func TestAutoDecodeRegisteredTagForUnmarshaler(t *testing.T) {
+	typ := reflect.TypeOf(number2(0))
+
+	tags := NewTagSet()
+	if err := tags.Add(TagOptions{EncTag: EncTagRequired, DecTag: DecTagRequired}, typ, 100); err != nil {
+		t.Fatalf("TagSet.Add(%s, %d) returned error %v", typ, 100, err)
+	}
+
+	cborData := hexDecode("d864a1636e756d1a499602d2") //  100({"num": 1234567890})
+	wantObj := number2(1234567890)
+
+	dm, _ := DecOptions{HandleTagForUnmarshaler: true}.DecModeWithTags(tags)
+	em, _ := EncOptions{HandleTagForMarshaler: true}.EncModeWithTags(tags)
+
+	// Decode to empty interface.  Unmarshal() should return object of registered type.
+	var v1 interface{}
+	if err := dm.Unmarshal(cborData, &v1); err != nil {
+		t.Errorf("Unmarshal() returned error %v", err)
+	}
+	if !reflect.DeepEqual(wantObj, v1) {
+		t.Errorf("Unmarshal() returned different values: want %v (%T), got %v (%T)", wantObj, wantObj, v1, v1)
+	}
+	b, err := em.Marshal(v1)
+	if err != nil {
+		t.Errorf("Marshal(%v) returned error %v", v1, err)
+	} else if !bytes.Equal(b, cborData) {
+		t.Errorf("Marshal(%v) returned %v, want %v", v1, b, cborData)
+	}
+
+	// Decode to registered type.
+	var v2 number2
 	if err = dm.Unmarshal(cborData, &v2); err != nil {
 		t.Errorf("Unmarshal() returned error %v", err)
 	}
