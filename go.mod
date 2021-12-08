@@ -1,4 +1,4 @@
-module github.com/fxamacker/cbor/v2
+module github.com/eluv-io/cbor/v2
 
 go 1.12
 
