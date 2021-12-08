@@ -294,6 +294,12 @@ type DecOptions struct {
 	// MapType specifies the go type to use during schema-less decoding of a CBOR map.
 	// Defaults to map[interface{}]interface{}.
 	MapType reflect.Type
+
+	// HandleTagForUnmarshaler activates automatic handling of CBOR tags for types implementing the Unmarshaler
+	// interface. By default, an Unmarshaler is expected to read CBOR tags itself in its UnmarshalCBOR() method. Setting
+	// this option to true instructs the decoder to consume the tags if required by the configured TagSet (just as it is
+	// done for all types that don't implement the Unmarshaler interface).
+	HandleTagForUnmarshaler bool
 }
 
 // DecMode returns DecMode with immutable options and no tags (safe for concurrency).
@@ -394,16 +400,17 @@ func (opts DecOptions) decMode() (*decMode, error) {
 		return nil, errors.New("cbor: invalid ExtraReturnErrors " + strconv.Itoa(int(opts.ExtraReturnErrors)))
 	}
 	dm := decMode{
-		dupMapKey:         opts.DupMapKey,
-		timeTag:           opts.TimeTag,
-		maxNestedLevels:   opts.MaxNestedLevels,
-		maxArrayElements:  opts.MaxArrayElements,
-		maxMapPairs:       opts.MaxMapPairs,
-		indefLength:       opts.IndefLength,
-		tagsMd:            opts.TagsMd,
-		intDec:            opts.IntDec,
-		extraReturnErrors: opts.ExtraReturnErrors,
-		mapType:           opts.MapType,
+		dupMapKey:               opts.DupMapKey,
+		timeTag:                 opts.TimeTag,
+		maxNestedLevels:         opts.MaxNestedLevels,
+		maxArrayElements:        opts.MaxArrayElements,
+		maxMapPairs:             opts.MaxMapPairs,
+		indefLength:             opts.IndefLength,
+		tagsMd:                  opts.TagsMd,
+		intDec:                  opts.IntDec,
+		extraReturnErrors:       opts.ExtraReturnErrors,
+		mapType:                 opts.MapType,
+		handleTagForUnmarshaler: opts.HandleTagForUnmarshaler,
 	}
 	return &dm, nil
 }
@@ -425,17 +432,18 @@ type DecMode interface {
 }
 
 type decMode struct {
-	tags              tagProvider
-	dupMapKey         DupMapKeyMode
-	timeTag           DecTagMode
-	maxNestedLevels   int
-	maxArrayElements  int
-	maxMapPairs       int
-	indefLength       IndefLengthMode
-	tagsMd            TagsMode
-	intDec            IntDecMode
-	extraReturnErrors ExtraDecErrorCond
-	mapType           reflect.Type
+	tags                    tagProvider
+	dupMapKey               DupMapKeyMode
+	timeTag                 DecTagMode
+	maxNestedLevels         int
+	maxArrayElements        int
+	maxMapPairs             int
+	indefLength             IndefLengthMode
+	tagsMd                  TagsMode
+	intDec                  IntDecMode
+	extraReturnErrors       ExtraDecErrorCond
+	mapType                 reflect.Type
+	handleTagForUnmarshaler bool
 }
 
 var defaultDecMode, _ = DecOptions{}.decMode()
@@ -443,16 +451,17 @@ var defaultDecMode, _ = DecOptions{}.decMode()
 // DecOptions returns user specified options used to create this DecMode.
 func (dm *decMode) DecOptions() DecOptions {
 	return DecOptions{
-		DupMapKey:         dm.dupMapKey,
-		TimeTag:           dm.timeTag,
-		MaxNestedLevels:   dm.maxNestedLevels,
-		MaxArrayElements:  dm.maxArrayElements,
-		MaxMapPairs:       dm.maxMapPairs,
-		IndefLength:       dm.indefLength,
-		TagsMd:            dm.tagsMd,
-		IntDec:            dm.intDec,
-		ExtraReturnErrors: dm.extraReturnErrors,
-		MapType:           dm.mapType,
+		DupMapKey:               dm.dupMapKey,
+		TimeTag:                 dm.timeTag,
+		MaxNestedLevels:         dm.maxNestedLevels,
+		MaxArrayElements:        dm.maxArrayElements,
+		MaxMapPairs:             dm.maxMapPairs,
+		IndefLength:             dm.indefLength,
+		TagsMd:                  dm.tagsMd,
+		IntDec:                  dm.intDec,
+		ExtraReturnErrors:       dm.extraReturnErrors,
+		MapType:                 dm.mapType,
+		HandleTagForUnmarshaler: dm.handleTagForUnmarshaler,
 	}
 }
 
@@ -613,6 +622,9 @@ func (d *decoder) parseToValue(v reflect.Value, tInfo *typeInfo) error { //nolin
 			v.Set(reflect.ValueOf(tm))
 			return nil
 		case specialTypeUnmarshalerIface:
+			if d.dm.handleTagForUnmarshaler && d.nextCBORType() == cborTypeTag {
+				d.getHead() // consume CBOR tag
+			}
 			return d.parseToUnmarshaler(v)
 		}
 	}

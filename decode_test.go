@@ -3063,16 +3063,17 @@ func TestUnmarshalToNotNilInterface(t *testing.T) {
 
 func TestDecOptions(t *testing.T) {
 	opts1 := DecOptions{
-		TimeTag:           DecTagRequired,
-		DupMapKey:         DupMapKeyEnforcedAPF,
-		IndefLength:       IndefLengthForbidden,
-		MaxNestedLevels:   100,
-		MaxMapPairs:       101,
-		MaxArrayElements:  102,
-		TagsMd:            TagsForbidden,
-		IntDec:            IntDecConvertSigned,
-		ExtraReturnErrors: ExtraDecErrorUnknownField,
-		MapType:           reflect.TypeOf((map[string]interface{})(nil)),
+		TimeTag:                 DecTagRequired,
+		DupMapKey:               DupMapKeyEnforcedAPF,
+		IndefLength:             IndefLengthForbidden,
+		MaxNestedLevels:         100,
+		MaxMapPairs:             101,
+		MaxArrayElements:        102,
+		TagsMd:                  TagsForbidden,
+		IntDec:                  IntDecConvertSigned,
+		ExtraReturnErrors:       ExtraDecErrorUnknownField,
+		MapType:                 reflect.TypeOf((map[string]interface{})(nil)),
+		HandleTagForUnmarshaler: true,
 	}
 	dm, err := opts1.DecMode()
 	if err != nil {
