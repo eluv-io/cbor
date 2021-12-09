@@ -622,28 +622,22 @@ func (d *decoder) parseToValue(v reflect.Value, tInfo *typeInfo) error { //nolin
 			v.Set(reflect.ValueOf(tm))
 			return nil
 		case specialTypeUnmarshalerIface:
-			if d.dm.handleTagForUnmarshaler && d.nextCBORType() == cborTypeTag {
-				d.getHead() // consume CBOR tag
+			if d.dm.handleTagForUnmarshaler {
+				err := d.checkRegisteredTag(tInfo)
+				if err != nil {
+					return err
+				}
+				if d.nextCBORType() == cborTypeTag {
+					d.getHead() // consume CBOR tag
+				}
 			}
 			return d.parseToUnmarshaler(v)
 		}
 	}
 
-	// Check registered tag number
-	if tagItem := d.getRegisteredTagItem(tInfo.nonPtrType); tagItem != nil {
-		t := d.nextCBORType()
-		if t != cborTypeTag {
-			if tagItem.opts.DecTag == DecTagRequired {
-				d.skip() // Required tag number is absent, skip entire tag
-				return &UnmarshalTypeError{
-					CBORType: t.String(),
-					GoType:   tInfo.typ.String(),
-					errorMsg: "expect CBOR tag value"}
-			}
-		} else if err := d.validRegisteredTagNums(tagItem); err != nil {
-			d.skip() // Skip tag content
-			return err
-		}
+	err := d.checkRegisteredTag(tInfo)
+	if err != nil {
+		return err
 	}
 
 	t := d.nextCBORType()
@@ -767,6 +761,25 @@ func (d *decoder) parseToValue(v reflect.Value, tInfo *typeInfo) error { //nolin
 		}
 		d.skip()
 		return &UnmarshalTypeError{CBORType: t.String(), GoType: tInfo.nonPtrType.String()}
+	}
+	return nil
+}
+
+func (d *decoder) checkRegisteredTag(tInfo *typeInfo) error {
+	if tagItem := d.getRegisteredTagItem(tInfo.nonPtrType); tagItem != nil {
+		t := d.nextCBORType()
+		if t != cborTypeTag {
+			if tagItem.opts.DecTag == DecTagRequired {
+				d.skip() // Required tag number is absent, skip entire tag
+				return &UnmarshalTypeError{
+					CBORType: t.String(),
+					GoType:   tInfo.typ.String(),
+					errorMsg: "expect CBOR tag value"}
+			}
+		} else if err := d.validRegisteredTagNums(tagItem); err != nil {
+			d.skip() // Skip tag content
+			return err
+		}
 	}
 	return nil
 }
