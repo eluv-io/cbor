@@ -22,9 +22,9 @@ linters-settings:
       - octalLiteral
       - paramTypeCombine
       - whyNoLint
-      - wrapperFunc    
+      - wrapperFunc
   gofmt:
-    simplify: false    
+    simplify: false
   goimports:
     local-prefixes: github.com/fxamacker/cbor
   golint:
@@ -45,8 +45,8 @@ linters:
     - errcheck
     - goconst
     - gocyclo
-    - gofmt
-    - goimports
+    # - gofmt       # handled by safer-golangci-lint.yml
+    # - goimports   # handled by safer-golangci-lint.yml
     - gosec
     - govet
     - ineffassign
@@ -71,7 +71,7 @@ issues:
         - goconst
         - dupl
         - gomnd
-        - lll        
+        - lll
     - path: doc\.go
       linters:
         - goimports

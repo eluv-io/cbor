@@ -121,14 +121,14 @@ func (enc *Encoder) Encode(v interface{}) error {
 
 // StartIndefiniteByteString starts byte string encoding of indefinite length.
 // Subsequent calls of (*Encoder).Encode() encodes definite length byte strings
-// ("chunks") as one continguous string until EndIndefinite is called.
+// ("chunks") as one contiguous string until EndIndefinite is called.
 func (enc *Encoder) StartIndefiniteByteString() error {
 	return enc.startIndefinite(cborTypeByteString)
 }
 
 // StartIndefiniteTextString starts text string encoding of indefinite length.
 // Subsequent calls of (*Encoder).Encode() encodes definite length text strings
-// ("chunks") as one continguous string until EndIndefinite is called.
+// ("chunks") as one contiguous string until EndIndefinite is called.
 func (enc *Encoder) StartIndefiniteTextString() error {
 	return enc.startIndefinite(cborTypeTextString)
 }
@@ -193,7 +193,6 @@ func (m *RawMessage) UnmarshalCBOR(data []byte) error {
 	if m == nil {
 		return errors.New("cbor.RawMessage: UnmarshalCBOR on nil pointer")
 	}
-	*m = make([]byte, len(data))
-	copy(*m, data)
+	*m = append((*m)[0:0], data...)
 	return nil
 }

@@ -431,31 +431,31 @@ var unmarshalTests = []unmarshalTest{
 	{
 		hexDecode("f4"),
 		false,
-		[]interface{}{false},
+		[]interface{}{false, SimpleValue(20)},
 		[]reflect.Type{typeUint8, typeUint16, typeUint32, typeUint64, typeInt8, typeInt16, typeInt32, typeInt64, typeFloat32, typeFloat64, typeByteArray, typeByteSlice, typeString, typeIntSlice, typeMapStringInt, typeTag, typeRawTag, typeBigInt},
 	},
 	{
 		hexDecode("f5"),
 		true,
-		[]interface{}{true},
+		[]interface{}{true, SimpleValue(21)},
 		[]reflect.Type{typeUint8, typeUint16, typeUint32, typeUint64, typeInt8, typeInt16, typeInt32, typeInt64, typeFloat32, typeFloat64, typeByteArray, typeByteSlice, typeString, typeIntSlice, typeMapStringInt, typeTag, typeRawTag, typeBigInt},
 	},
 	{
 		hexDecode("f6"),
 		nil,
-		[]interface{}{false, uint(0), uint8(0), uint16(0), uint32(0), uint64(0), int(0), int8(0), int16(0), int32(0), int64(0), float32(0.0), float64(0.0), "", []byte(nil), []int(nil), []string(nil), map[string]int(nil), time.Time{}, bigIntOrPanic("0"), Tag{}, RawTag{}},
+		[]interface{}{SimpleValue(22), false, uint(0), uint8(0), uint16(0), uint32(0), uint64(0), int(0), int8(0), int16(0), int32(0), int64(0), float32(0.0), float64(0.0), "", []byte(nil), []int(nil), []string(nil), map[string]int(nil), time.Time{}, bigIntOrPanic("0"), Tag{}, RawTag{}},
 		nil,
 	},
 	{
 		hexDecode("f7"),
 		nil,
-		[]interface{}{false, uint(0), uint8(0), uint16(0), uint32(0), uint64(0), int(0), int8(0), int16(0), int32(0), int64(0), float32(0.0), float64(0.0), "", []byte(nil), []int(nil), []string(nil), map[string]int(nil), time.Time{}, bigIntOrPanic("0"), Tag{}, RawTag{}},
+		[]interface{}{SimpleValue(23), false, uint(0), uint8(0), uint16(0), uint32(0), uint64(0), int(0), int8(0), int16(0), int32(0), int64(0), float32(0.0), float64(0.0), "", []byte(nil), []int(nil), []string(nil), map[string]int(nil), time.Time{}, bigIntOrPanic("0"), Tag{}, RawTag{}},
 		nil,
 	},
 	{
 		hexDecode("f0"),
-		uint64(16),
-		[]interface{}{uint8(16), uint16(16), uint32(16), uint64(16), uint(16), int8(16), int16(16), int32(16), int64(16), int(16), float32(16), float64(16), bigIntOrPanic("16")},
+		SimpleValue(16),
+		[]interface{}{SimpleValue(16), uint8(16), uint16(16), uint32(16), uint64(16), uint(16), int8(16), int16(16), int32(16), int64(16), int(16), float32(16), float64(16), bigIntOrPanic("16")},
 		[]reflect.Type{typeByteSlice, typeString, typeBool, typeByteArray, typeIntSlice, typeMapStringInt, typeTag, typeRawTag},
 	},
 	// This example is not well-formed because Simple value (with 5-bit value 24) must be >= 32.
@@ -471,14 +471,14 @@ var unmarshalTests = []unmarshalTest{
 	*/
 	{
 		hexDecode("f820"),
-		uint64(32),
-		[]interface{}{uint8(32), uint16(32), uint32(32), uint64(32), uint(32), int8(32), int16(32), int32(32), int64(32), int(32), float32(32), float64(32), bigIntOrPanic("32")},
+		SimpleValue(32),
+		[]interface{}{SimpleValue(32), uint8(32), uint16(32), uint32(32), uint64(32), uint(32), int8(32), int16(32), int32(32), int64(32), int(32), float32(32), float64(32), bigIntOrPanic("32")},
 		[]reflect.Type{typeByteSlice, typeString, typeBool, typeByteArray, typeIntSlice, typeMapStringInt, typeTag, typeRawTag},
 	},
 	{
 		hexDecode("f8ff"),
-		uint64(255),
-		[]interface{}{uint8(255), uint16(255), uint32(255), uint64(255), uint(255), int16(255), int32(255), int64(255), int(255), float32(255), float64(255), bigIntOrPanic("255")},
+		SimpleValue(255),
+		[]interface{}{SimpleValue(255), uint8(255), uint16(255), uint32(255), uint64(255), uint(255), int16(255), int32(255), int64(255), int(255), float32(255), float64(255), bigIntOrPanic("255")},
 		[]reflect.Type{typeByteSlice, typeString, typeBool, typeByteArray, typeIntSlice, typeMapStringInt, typeTag, typeRawTag},
 	},
 	// More testcases not covered by https://tools.ietf.org/html/rfc7049#appendix-A.
@@ -1383,33 +1383,157 @@ func TestInvalidCBORUnmarshal(t *testing.T) {
 	}
 }
 
-func TestInvalidUTF8TextString(t *testing.T) {
-	invalidUTF8TextStringTests := []struct {
-		name         string
-		cborData     []byte
-		wantErrorMsg string
-	}{
-		{"definite length text string", hexDecode("61fe"), invalidUTF8ErrorMsg},
-		{"indefinite length text string", hexDecode("7f62e6b061b4ff"), invalidUTF8ErrorMsg},
+func TestValidUTF8String(t *testing.T) {
+	dmRejectInvalidUTF8, err := DecOptions{UTF8: UTF8RejectInvalid}.DecMode()
+	if err != nil {
+		t.Errorf("DecMode() returned an error %+v", err)
 	}
-	for _, tc := range invalidUTF8TextStringTests {
+	dmDecodeInvalidUTF8, err := DecOptions{UTF8: UTF8DecodeInvalid}.DecMode()
+	if err != nil {
+		t.Errorf("DecMode() returned an error %+v", err)
+	}
+
+	testCases := []struct {
+		name     string
+		cborData []byte
+		dm       DecMode
+		wantObj  interface{}
+	}{
+		{
+			name:     "with UTF8RejectInvalid",
+			cborData: hexDecode("6973747265616d696e67"),
+			dm:       dmRejectInvalidUTF8,
+			wantObj:  "streaming",
+		},
+		{
+			name:     "with UTF8DecodeInvalid",
+			cborData: hexDecode("6973747265616d696e67"),
+			dm:       dmDecodeInvalidUTF8,
+			wantObj:  "streaming",
+		},
+		{
+			name:     "indef length with UTF8RejectInvalid",
+			cborData: hexDecode("7f657374726561646d696e67ff"),
+			dm:       dmRejectInvalidUTF8,
+			wantObj:  "streaming",
+		},
+		{
+			name:     "indef length with UTF8DecodeInvalid",
+			cborData: hexDecode("7f657374726561646d696e67ff"),
+			dm:       dmDecodeInvalidUTF8,
+			wantObj:  "streaming",
+		},
+	}
+	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			// Decode to empty interface
 			var i interface{}
-			if err := Unmarshal(tc.cborData, &i); err == nil {
-				t.Errorf("Unmarshal(0x%x) didn't return an error", tc.cborData)
-			} else if err.Error() != tc.wantErrorMsg {
-				t.Errorf("Unmarshal(0x%x) error %q, want %q", tc.cborData, err.Error(), tc.wantErrorMsg)
+			err = tc.dm.Unmarshal(tc.cborData, &i)
+			if err != nil {
+				t.Errorf("Unmarshal(0x%x) returned error %q", tc.cborData, err)
+			}
+			if !reflect.DeepEqual(i, tc.wantObj) {
+				t.Errorf("Unmarshal(0x%x) returned %v (%T), want %v (%T)", tc.cborData, i, i, tc.wantObj, tc.wantObj)
 			}
 
-			var s string
-			if err := Unmarshal(tc.cborData, &s); err == nil {
-				t.Errorf("Unmarshal(0x%x) didn't return an error", tc.cborData)
-			} else if err.Error() != tc.wantErrorMsg {
-				t.Errorf("Unmarshal(0x%x) error %q, want %q", tc.cborData, err.Error(), tc.wantErrorMsg)
+			// Decode to string
+			var v string
+			err = tc.dm.Unmarshal(tc.cborData, &v)
+			if err != nil {
+				t.Errorf("Unmarshal(0x%x) returned error %q", tc.cborData, err)
+			}
+			if !reflect.DeepEqual(v, tc.wantObj) {
+				t.Errorf("Unmarshal(0x%x) returned %v (%T), want %v (%T)", tc.cborData, v, v, tc.wantObj, tc.wantObj)
 			}
 		})
 	}
+}
+
+func TestInvalidUTF8String(t *testing.T) {
+	dmRejectInvalidUTF8, err := DecOptions{UTF8: UTF8RejectInvalid}.DecMode()
+	if err != nil {
+		t.Errorf("DecMode() returned an error %+v", err)
+	}
+	dmDecodeInvalidUTF8, err := DecOptions{UTF8: UTF8DecodeInvalid}.DecMode()
+	if err != nil {
+		t.Errorf("DecMode() returned an error %+v", err)
+	}
+
+	testCases := []struct {
+		name         string
+		cborData     []byte
+		dm           DecMode
+		wantObj      interface{}
+		wantErrorMsg string
+	}{
+		{
+			name:         "with UTF8RejectInvalid",
+			cborData:     hexDecode("61fe"),
+			dm:           dmRejectInvalidUTF8,
+			wantErrorMsg: invalidUTF8ErrorMsg,
+		},
+		{
+			name:     "with UTF8DecodeInvalid",
+			cborData: hexDecode("61fe"),
+			dm:       dmDecodeInvalidUTF8,
+			wantObj:  string([]byte{0xfe}),
+		},
+		{
+			name:         "indef length with UTF8RejectInvalid",
+			cborData:     hexDecode("7f62e6b061b4ff"),
+			dm:           dmRejectInvalidUTF8,
+			wantErrorMsg: invalidUTF8ErrorMsg,
+		},
+		{
+			name:     "indef length with UTF8DecodeInvalid",
+			cborData: hexDecode("7f62e6b061b4ff"),
+			dm:       dmDecodeInvalidUTF8,
+			wantObj:  string([]byte{0xe6, 0xb0, 0xb4}),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Decode to empty interface
+			var v interface{}
+			err = tc.dm.Unmarshal(tc.cborData, &v)
+			if tc.wantErrorMsg != "" {
+				if err == nil {
+					t.Errorf("Unmarshal(0x%x) didn't return error", tc.cborData)
+				} else if !strings.Contains(err.Error(), tc.wantErrorMsg) {
+					t.Errorf("Unmarshal(0x%x) error %q, want %q", tc.cborData, err.Error(), tc.wantErrorMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unmarshal(0x%x) returned error %q", tc.cborData, err)
+				}
+				if !reflect.DeepEqual(v, tc.wantObj) {
+					t.Errorf("Unmarshal(0x%x) returned %v (%T), want %v (%T)", tc.cborData, v, v, tc.wantObj, tc.wantObj)
+				}
+			}
+
+			// Decode to string
+			var s string
+			err = tc.dm.Unmarshal(tc.cborData, &s)
+			if tc.wantErrorMsg != "" {
+				if err == nil {
+					t.Errorf("Unmarshal(0x%x) didn't return error", tc.cborData)
+				} else if !strings.Contains(err.Error(), tc.wantErrorMsg) {
+					t.Errorf("Unmarshal(0x%x) error %q, want %q", tc.cborData, err.Error(), tc.wantErrorMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unmarshal(0x%x) returned error %q", tc.cborData, err)
+				}
+				if !reflect.DeepEqual(s, tc.wantObj) {
+					t.Errorf("Unmarshal(0x%x) returned %v (%T), want %v (%T)", tc.cborData, s, s, tc.wantObj, tc.wantObj)
+				}
+			}
+		})
+	}
+
 	// Test decoding of mixed invalid text string and valid text string
+	// with UTF8RejectInvalid option (default)
 	cborData := hexDecode("7f62e6b061b4ff7f657374726561646d696e67ff")
 	dec := NewDecoder(bytes.NewReader(cborData))
 	var s string
@@ -1417,6 +1541,20 @@ func TestInvalidUTF8TextString(t *testing.T) {
 		t.Errorf("Decode() didn't return an error")
 	} else if s != "" {
 		t.Errorf("Decode() returned %q, want %q", s, "")
+	}
+	if err := dec.Decode(&s); err != nil {
+		t.Errorf("Decode() returned error %v", err)
+	} else if s != "streaming" {
+		t.Errorf("Decode() returned %q, want %q", s, "streaming")
+	}
+
+	// Test decoding of mixed invalid text string and valid text string
+	// with UTF8DecodeInvalid option
+	dec = dmDecodeInvalidUTF8.NewDecoder(bytes.NewReader(cborData))
+	if err := dec.Decode(&s); err != nil {
+		t.Errorf("Decode() returned error %q", err)
+	} else if s != string([]byte{0xe6, 0xb0, 0xb4}) {
+		t.Errorf("Decode() returned %q, want %q", s, string([]byte{0xe6, 0xb0, 0xb4}))
 	}
 	if err := dec.Decode(&s); err != nil {
 		t.Errorf("Decode() returned error %v", err)
@@ -2993,6 +3131,44 @@ func TestUnmarshalIntoMapError(t *testing.T) {
 	}
 }
 
+func TestUnmarshalDeepNesting(t *testing.T) {
+	// Construct this object rather than embed such a large constant in the code
+	type TestNode struct {
+		Value int
+		Child *TestNode
+	}
+	n := &TestNode{Value: 0}
+	root := n
+	for i := 0; i < 65534; i++ {
+		child := &TestNode{Value: i}
+		n.Child = child
+		n = child
+	}
+	em, err := EncOptions{}.EncMode()
+	if err != nil {
+		t.Errorf("EncMode() returned error %v", err)
+	}
+	cborData, err := em.Marshal(root)
+	if err != nil {
+		t.Errorf("Marshal() deeply nested object returned error %v", err)
+	}
+
+	// Try unmarshal it
+	dm, err := DecOptions{MaxNestedLevels: 65535}.DecMode()
+	if err != nil {
+		t.Errorf("DecMode() returned error %v", err)
+	}
+	var readback TestNode
+	err = dm.Unmarshal(cborData, &readback)
+	if err != nil {
+		t.Errorf("Unmarshal() of deeply nested object returned error: %v", err)
+	}
+	if !reflect.DeepEqual(root, &readback) {
+		t.Errorf("Unmarshal() of deeply nested object did not match\nGot: %#v\n Want: %#v\n",
+			&readback, root)
+	}
+}
+
 func TestStructToArrayError(t *testing.T) {
 	type coseHeader struct {
 		Alg int    `cbor:"1,keyasint,omitempty"`
@@ -3050,7 +3226,7 @@ func TestStructKeyAsIntError(t *testing.T) {
 func TestUnmarshalToNotNilInterface(t *testing.T) {
 	cborData := hexDecode("83010203") // []uint64{1, 2, 3}
 	s := "hello"                      //nolint:goconst
-	var v interface{} = s             // Unmarshal() sees v as type inteface{} and sets CBOR data as default Go type.  s is unmodified.  Same behavior as encoding/json.
+	var v interface{} = s             // Unmarshal() sees v as type interface{} and sets CBOR data as default Go type.  s is unmodified.  Same behavior as encoding/json.
 	wantV := []interface{}{uint64(1), uint64(2), uint64(3)}
 	if err := Unmarshal(cborData, &v); err != nil {
 		t.Errorf("Unmarshal(0x%x) returned error %v", cborData, err)
@@ -3063,16 +3239,17 @@ func TestUnmarshalToNotNilInterface(t *testing.T) {
 
 func TestDecOptions(t *testing.T) {
 	opts1 := DecOptions{
-		TimeTag:                 DecTagRequired,
 		DupMapKey:               DupMapKeyEnforcedAPF,
-		IndefLength:             IndefLengthForbidden,
+		TimeTag:                 DecTagRequired,
 		MaxNestedLevels:         100,
-		MaxMapPairs:             101,
 		MaxArrayElements:        102,
+		MaxMapPairs:             101,
+		IndefLength:             IndefLengthForbidden,
 		TagsMd:                  TagsForbidden,
 		IntDec:                  IntDecConvertSigned,
 		ExtraReturnErrors:       ExtraDecErrorUnknownField,
-		MapType:                 reflect.TypeOf((map[string]interface{})(nil)),
+		DefaultMapType:          reflect.TypeOf((map[string]interface{})(nil)),
+		UTF8:                    UTF8DecodeInvalid,
 		HandleTagForUnmarshaler: true,
 	}
 	dm, err := opts1.DecMode()
@@ -3154,12 +3331,12 @@ func TestDecModeInvalidMaxNestedLevel(t *testing.T) {
 		{
 			name:         "MaxNestedLevels < 4",
 			opts:         DecOptions{MaxNestedLevels: 1},
-			wantErrorMsg: "cbor: invalid MaxNestedLevels 1 (range is [4, 256])",
+			wantErrorMsg: "cbor: invalid MaxNestedLevels 1 (range is [4, 65535])",
 		},
 		{
-			name:         "MaxNestedLevels > 256",
-			opts:         DecOptions{MaxNestedLevels: 257},
-			wantErrorMsg: "cbor: invalid MaxNestedLevels 257 (range is [4, 256])",
+			name:         "MaxNestedLevels > 65535",
+			opts:         DecOptions{MaxNestedLevels: 65536},
+			wantErrorMsg: "cbor: invalid MaxNestedLevels 65536 (range is [4, 65535])",
 		},
 	}
 	for _, tc := range testCases {
@@ -4493,102 +4670,7 @@ func TestDecModeInvalidExtraError(t *testing.T) {
 	}
 }
 
-func TestDecMapTypeOption(t *testing.T) {
-	testCases := []struct {
-		name         string
-		decOpts      DecOptions
-		cborData     []byte
-		wantObj      interface{}
-		wantErrorMsg string
-	}{
-		{
-			name:     "CBOR map[string]string to Go map[interface{}]interface{} (default)",
-			decOpts:  DecOptions{},
-			cborData: hexDecode("a3626b31627631626b32627632626b33627633"),
-			wantObj:  map[interface{}]interface{}{"k1": "v1", "k2": "v2", "k3": "v3"},
-		},
-		{
-			name:     "CBOR map[string]string to Go map[string]interface{}",
-			decOpts:  DecOptions{MapType: reflect.TypeOf((map[string]interface{})(nil))},
-			cborData: hexDecode("a3626b31627631626b32627632626b33627633"),
-			wantObj:  map[string]interface{}{"k1": "v1", "k2": "v2", "k3": "v3"},
-		},
-		{
-			name:     "CBOR map[string]string to Go map[string]string",
-			decOpts:  DecOptions{MapType: reflect.TypeOf((map[string]string)(nil))},
-			cborData: hexDecode("a3626b31627631626b32627632626b33627633"),
-			wantObj:  map[string]string{"k1": "v1", "k2": "v2", "k3": "v3"},
-		},
-		{
-			name:     "CBOR map[int]string to Go map[interface{}]interface{} (default)",
-			decOpts:  DecOptions{},
-			cborData: hexDecode("a3016276310262763203627633"),
-			wantObj:  map[interface{}]interface{}{uint64(1): "v1", uint64(2): "v2", uint64(3): "v3"},
-		},
-		{
-			name:     "CBOR map[int]string to Go map[int]string",
-			decOpts:  DecOptions{MapType: reflect.TypeOf((map[int]string)(nil))},
-			cborData: hexDecode("a3016276310262763203627633"),
-			wantObj:  map[int]string{1: "v1", 2: "v2", 3: "v3"},
-		},
-		{
-			name:     "CBOR [] of map[int]string to Go []interface{} with map[interface{}]interface{} elements (default)",
-			decOpts:  DecOptions{},
-			cborData: hexDecode("82a3626b31627631626b32627632626b33627633a2626b34627634626b35627635"),
-			wantObj:  []interface{}{map[interface{}]interface{}{"k1": "v1", "k2": "v2", "k3": "v3"}, map[interface{}]interface{}{"k4": "v4", "k5": "v5"}},
-		},
-		{
-			name:     "CBOR [] of map[int]string to Go []interface{} with map[string]interface{} elements",
-			decOpts:  DecOptions{MapType: reflect.TypeOf((map[string]interface{})(nil))},
-			cborData: hexDecode("82a3626b31627631626b32627632626b33627633a2626b34627634626b35627635"),
-			wantObj:  []interface{}{map[string]interface{}{"k1": "v1", "k2": "v2", "k3": "v3"}, map[string]interface{}{"k4": "v4", "k5": "v5"}},
-		},
-		{
-			name:         "error: CBOR map[string]string to Go map[int]interface{}",
-			decOpts:      DecOptions{MapType: reflect.TypeOf((map[int]interface{})(nil))},
-			cborData:     hexDecode("a3626b31627631626b32627632626b33627633"),
-			wantErrorMsg: "cbor: cannot unmarshal UTF-8 text string into Go value of type int",
-		},
-		{
-			name:         "error CBOR map[int]string to Go map[string]interface{}",
-			decOpts:      DecOptions{MapType: reflect.TypeOf((map[string]interface{})(nil))},
-			cborData:     hexDecode("a3016276310262763203627633"),
-			wantErrorMsg: "cbor: cannot unmarshal positive integer into Go value of type string",
-		},
-		{
-			name:         "error CBOR map[int]string to Go string",
-			decOpts:      DecOptions{MapType: reflect.TypeOf((*string)(nil))},
-			cborData:     hexDecode("a3016276310262763203627633"),
-			wantErrorMsg: "cbor: cannot unmarshal map into Go value of type string",
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			dm, err := tc.decOpts.DecMode()
-			if err != nil {
-				t.Errorf("DecMode() returned an error %+v", err)
-			}
-
-			var v interface{}
-			err = dm.Unmarshal(tc.cborData, &v)
-			if err == nil {
-				if tc.wantErrorMsg != "" {
-					t.Errorf("Unmarshal(0x%x) didn't return an error, want %q", tc.cborData, tc.wantErrorMsg)
-				} else if !reflect.DeepEqual(v, tc.wantObj) {
-					t.Errorf("Unmarshal(0x%x) returned %v (%T), want %v (%T)", tc.cborData, v, v, tc.wantObj, tc.wantObj)
-				}
-			} else {
-				if tc.wantErrorMsg == "" {
-					t.Errorf("Unmarshal(0x%x) returned error %q", tc.cborData, err)
-				} else if !strings.Contains(err.Error(), tc.wantErrorMsg) {
-					t.Errorf("Unmarshal(0x%x) returned error %q, want %q", tc.cborData, err.Error(), tc.wantErrorMsg)
-				}
-			}
-		})
-	}
-}
-
-func TestExtraErrorCondUnknowField(t *testing.T) {
+func TestExtraErrorCondUnknownField(t *testing.T) {
 	type s struct {
 		A string
 		B string
@@ -4663,7 +4745,17 @@ func TestExtraErrorCondUnknowField(t *testing.T) {
 	}
 }
 
-func TestStreamExtraErrorCondUnknowField(t *testing.T) {
+func TestInvalidUTF8Mode(t *testing.T) {
+	wantErrorMsg := "cbor: invalid UTF8 2"
+	_, err := DecOptions{UTF8: 2}.DecMode()
+	if err == nil {
+		t.Errorf("DecMode() didn't return an error")
+	} else if err.Error() != wantErrorMsg {
+		t.Errorf("DecMode() returned error %q, want %q", err.Error(), wantErrorMsg)
+	}
+}
+
+func TestStreamExtraErrorCondUnknownField(t *testing.T) {
 	type s struct {
 		A string
 		B string
@@ -5346,63 +5438,63 @@ func TestUnmarshalToInterface(t *testing.T) {
 	}{
 		{
 			name: "uint",
-			data: hexDecode("a2016b736f6d65206d657373676502187b"), // {1: "some messge", 2: 123}
+			data: hexDecode("a2016c736f6d65206d65737361676502187b"), // {1: "some message", 2: 123}
 			v: &TestExample{
-				Message: "some messge",
+				Message: "some message",
 				Foo:     &uintFoo123,
 			},
 			unmarshalToObj: &TestExample{Foo: &uintFoo},
 		},
 		{
 			name: "int",
-			data: hexDecode("a2016b736f6d65206d65737367650220"), // {1: "some messge", 2: -1}
+			data: hexDecode("a2016c736f6d65206d6573736167650220"), // {1: "some message", 2: -1}
 			v: &TestExample{
-				Message: "some messge",
+				Message: "some message",
 				Foo:     &intFooNeg1,
 			},
 			unmarshalToObj: &TestExample{Foo: &intFoo},
 		},
 		{
 			name: "bytes",
-			data: hexDecode("a2016b736f6d65206d65737367650243010203"), // {1: "some messge", 2: [1,2,3]}
+			data: hexDecode("a2016c736f6d65206d6573736167650243010203"), // {1: "some message", 2: [1,2,3]}
 			v: &TestExample{
-				Message: "some messge",
+				Message: "some message",
 				Foo:     &byteFoo123,
 			},
 			unmarshalToObj: &TestExample{Foo: &byteFoo},
 		},
 		{
 			name: "string",
-			data: hexDecode("a2016b736f6d65206d65737367650263313233"), // {1: "some messge", 2: "123"}
+			data: hexDecode("a2016c736f6d65206d6573736167650263313233"), // {1: "some message", 2: "123"}
 			v: &TestExample{
-				Message: "some messge",
+				Message: "some message",
 				Foo:     &stringFoo123,
 			},
 			unmarshalToObj: &TestExample{Foo: &stringFoo},
 		},
 		{
 			name: "array",
-			data: hexDecode("a2016b736f6d65206d65737367650283010203"), // {1: "some messge", 2: []int{1,2,3}}
+			data: hexDecode("a2016c736f6d65206d6573736167650283010203"), // {1: "some message", 2: []int{1,2,3}}
 			v: &TestExample{
-				Message: "some messge",
+				Message: "some message",
 				Foo:     &arrayFoo123,
 			},
 			unmarshalToObj: &TestExample{Foo: &arrayFoo},
 		},
 		{
 			name: "map",
-			data: hexDecode("a2016b736f6d65206d657373676502a3010102020303"), // {1: "some messge", 2: map[int]int{1:1,2:2,3:3}}
+			data: hexDecode("a2016c736f6d65206d65737361676502a3010102020303"), // {1: "some message", 2: map[int]int{1:1,2:2,3:3}}
 			v: &TestExample{
-				Message: "some messge",
+				Message: "some message",
 				Foo:     &mapFoo123,
 			},
 			unmarshalToObj: &TestExample{Foo: &mapFoo},
 		},
 		{
 			name: "struct",
-			data: hexDecode("a2016b736f6d65206d657373676502a1011901c8"), // {1: "some messge", 2: {1: 456}}
+			data: hexDecode("a2016c736f6d65206d65737361676502a1011901c8"), // {1: "some message", 2: {1: 456}}
 			v: &TestExample{
-				Message: "some messge",
+				Message: "some message",
 				Foo:     &StructFoo{Value: 456},
 			},
 			unmarshalToObj: &TestExample{Foo: &StructFoo{}},
@@ -5495,5 +5587,299 @@ func TestUnmarshalTaggedDataToInterface(t *testing.T) {
 		t.Errorf("Unmarshal(0x%x) returned error %v", data, err)
 	} else if !reflect.DeepEqual(v2, v) {
 		t.Errorf("Unmarshal(0x%x) = %v, want %v", data, v2, v)
+	}
+}
+
+type B interface {
+	Foo()
+}
+
+type C struct {
+	Field int
+}
+
+func (c *C) Foo() {}
+
+type D struct {
+	Field string
+}
+
+func (d *D) Foo() {}
+
+type A1 struct {
+	Field B
+}
+
+type A2 struct {
+	Fields []B
+}
+
+func TestUnmarshalRegisteredTagToInterface(t *testing.T) {
+	var err error
+	tags := NewTagSet()
+	err = tags.Add(TagOptions{EncTag: EncTagRequired, DecTag: DecTagRequired}, reflect.TypeOf(C{}), 279)
+	if err != nil {
+		t.Error(err)
+	}
+	err = tags.Add(TagOptions{EncTag: EncTagRequired, DecTag: DecTagRequired}, reflect.TypeOf(D{}), 280)
+	if err != nil {
+		t.Error(err)
+	}
+
+	encMode, _ := PreferredUnsortedEncOptions().EncModeWithTags(tags)
+	decMode, _ := DecOptions{}.DecModeWithTags(tags)
+
+	v1 := A1{Field: &C{Field: 5}}
+	data1, err := encMode.Marshal(v1)
+	if err != nil {
+		t.Fatalf("Marshal(%+v) returned error %v", v1, err)
+	}
+
+	v2 := A2{Fields: []B{&C{Field: 5}, &D{Field: "a"}}}
+	data2, err := encMode.Marshal(v2)
+	if err != nil {
+		t.Fatalf("Marshal(%+v) returned error %v", v2, err)
+	}
+
+	testCases := []struct {
+		name           string
+		data           []byte
+		unmarshalToObj interface{}
+		wantValue      interface{}
+	}{
+		{
+			name:           "interface type",
+			data:           data1,
+			unmarshalToObj: &A1{},
+			wantValue:      &v1,
+		},
+		{
+			name:           "concrete type",
+			data:           data1,
+			unmarshalToObj: &A1{Field: &C{}},
+			wantValue:      &v1,
+		},
+		{
+			name:           "slice of interface type",
+			data:           data2,
+			unmarshalToObj: &A2{},
+			wantValue:      &v2,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err = decMode.Unmarshal(tc.data, tc.unmarshalToObj)
+			if err != nil {
+				t.Errorf("Unmarshal(0x%x) returned error %v", tc.data, err)
+			}
+			if !reflect.DeepEqual(tc.unmarshalToObj, tc.wantValue) {
+				t.Errorf("Unmarshal(0x%x) = %v, want %v", tc.data, tc.unmarshalToObj, tc.wantValue)
+			}
+		})
+	}
+}
+
+func TestDecModeInvalidDefaultMapType(t *testing.T) {
+	testCases := []struct {
+		name         string
+		opts         DecOptions
+		wantErrorMsg string
+	}{
+		{
+			name:         "byte slice",
+			opts:         DecOptions{DefaultMapType: reflect.TypeOf([]byte(nil))},
+			wantErrorMsg: "cbor: invalid DefaultMapType []uint8",
+		},
+		{
+			name:         "int slice",
+			opts:         DecOptions{DefaultMapType: reflect.TypeOf([]int(nil))},
+			wantErrorMsg: "cbor: invalid DefaultMapType []int",
+		},
+		{
+			name:         "string",
+			opts:         DecOptions{DefaultMapType: reflect.TypeOf("")},
+			wantErrorMsg: "cbor: invalid DefaultMapType string",
+		},
+		{
+			name:         "unnamed struct type",
+			opts:         DecOptions{DefaultMapType: reflect.TypeOf(struct{}{})},
+			wantErrorMsg: "cbor: invalid DefaultMapType struct {}",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.opts.DecMode()
+			if err == nil {
+				t.Errorf("DecMode() didn't return an error")
+			} else if err.Error() != tc.wantErrorMsg {
+				t.Errorf("DecMode() returned error %q, want %q", err.Error(), tc.wantErrorMsg)
+			}
+		})
+	}
+}
+
+func TestUnmarshalToDefaultMapType(t *testing.T) {
+
+	cborDataMapIntInt := hexDecode("a201020304")                                             // {1: 2, 3: 4}
+	cborDataMapStringInt := hexDecode("a2616101616202")                                      // {"a": 1, "b": 2}
+	cborDataArrayOfMapStringint := hexDecode("82a2616101616202a2616303616404")               // [{"a": 1, "b": 2}, {"c": 3, "d": 4}]
+	cborDataNestedMap := hexDecode("a268496e744669656c6401684d61704669656c64a2616101616202") // {"IntField": 1, "MapField": {"a": 1, "b": 2}}
+
+	decOptionsDefault := DecOptions{}
+	decOptionsMapIntfIntfType := DecOptions{DefaultMapType: reflect.TypeOf(map[interface{}]interface{}(nil))}
+	decOptionsMapStringIntType := DecOptions{DefaultMapType: reflect.TypeOf(map[string]int(nil))}
+	decOptionsMapStringIntfType := DecOptions{DefaultMapType: reflect.TypeOf(map[string]interface{}(nil))}
+
+	testCases := []struct {
+		name         string
+		opts         DecOptions
+		cborData     []byte
+		wantValue    interface{}
+		wantErrorMsg string
+	}{
+		// Decode CBOR map to map[interface{}]interface{} using default options
+		{
+			name:      "decode CBOR map[int]int to Go map[interface{}]interface{} (default)",
+			opts:      decOptionsDefault,
+			cborData:  cborDataMapIntInt,
+			wantValue: map[interface{}]interface{}{uint64(1): uint64(2), uint64(3): uint64(4)},
+		},
+		{
+			name:      "decode CBOR map[string]int to Go map[interface{}]interface{} (default)",
+			opts:      decOptionsDefault,
+			cborData:  cborDataMapStringInt,
+			wantValue: map[interface{}]interface{}{"a": uint64(1), "b": uint64(2)},
+		},
+		{
+			name:     "decode CBOR array of map[string]int to Go []map[interface{}]interface{} (default)",
+			opts:     decOptionsDefault,
+			cborData: cborDataArrayOfMapStringint,
+			wantValue: []interface{}{
+				map[interface{}]interface{}{"a": uint64(1), "b": uint64(2)},
+				map[interface{}]interface{}{"c": uint64(3), "d": uint64(4)},
+			},
+		},
+		{
+			name:     "decode CBOR nested map to Go map[interface{}]interface{} (default)",
+			opts:     decOptionsDefault,
+			cborData: cborDataNestedMap,
+			wantValue: map[interface{}]interface{}{
+				"IntField": uint64(1),
+				"MapField": map[interface{}]interface{}{"a": uint64(1), "b": uint64(2)},
+			},
+		},
+		// Decode CBOR map to map[interface{}]interface{} using default map type option
+		{
+			name:      "decode CBOR map[int]int to Go map[interface{}]interface{}",
+			opts:      decOptionsMapIntfIntfType,
+			cborData:  cborDataMapIntInt,
+			wantValue: map[interface{}]interface{}{uint64(1): uint64(2), uint64(3): uint64(4)},
+		},
+		{
+			name:      "decode CBOR map[string]int to Go map[interface{}]interface{}",
+			opts:      decOptionsMapIntfIntfType,
+			cborData:  cborDataMapStringInt,
+			wantValue: map[interface{}]interface{}{"a": uint64(1), "b": uint64(2)},
+		},
+		{
+			name:     "decode CBOR array of map[string]int to Go []map[interface{}]interface{}",
+			opts:     decOptionsMapIntfIntfType,
+			cborData: cborDataArrayOfMapStringint,
+			wantValue: []interface{}{
+				map[interface{}]interface{}{"a": uint64(1), "b": uint64(2)},
+				map[interface{}]interface{}{"c": uint64(3), "d": uint64(4)},
+			},
+		},
+		{
+			name:     "decode CBOR nested map to Go map[interface{}]interface{}",
+			opts:     decOptionsMapIntfIntfType,
+			cborData: cborDataNestedMap,
+			wantValue: map[interface{}]interface{}{
+				"IntField": uint64(1),
+				"MapField": map[interface{}]interface{}{"a": uint64(1), "b": uint64(2)},
+			},
+		},
+		// Decode CBOR map to map[string]interface{} using default map type option
+		{
+			name:         "decode CBOR map[int]int to Go map[string]interface{}",
+			opts:         decOptionsMapStringIntfType,
+			cborData:     cborDataMapIntInt,
+			wantErrorMsg: "cbor: cannot unmarshal positive integer into Go value of type string",
+		},
+		{
+			name:      "decode CBOR map[string]int to Go map[string]interface{}",
+			opts:      decOptionsMapStringIntfType,
+			cborData:  cborDataMapStringInt,
+			wantValue: map[string]interface{}{"a": uint64(1), "b": uint64(2)},
+		},
+		{
+			name:     "decode CBOR array of map[string]int to Go []map[string]interface{}",
+			opts:     decOptionsMapStringIntfType,
+			cborData: cborDataArrayOfMapStringint,
+			wantValue: []interface{}{
+				map[string]interface{}{"a": uint64(1), "b": uint64(2)},
+				map[string]interface{}{"c": uint64(3), "d": uint64(4)},
+			},
+		},
+		{
+			name:     "decode CBOR nested map to Go map[string]interface{}",
+			opts:     decOptionsMapStringIntfType,
+			cborData: cborDataNestedMap,
+			wantValue: map[string]interface{}{
+				"IntField": uint64(1),
+				"MapField": map[string]interface{}{"a": uint64(1), "b": uint64(2)},
+			},
+		},
+		// Decode CBOR map to map[string]int using default map type option
+		{
+			name:         "decode CBOR map[int]int to Go map[string]int",
+			opts:         decOptionsMapStringIntType,
+			cborData:     cborDataMapIntInt,
+			wantErrorMsg: "cbor: cannot unmarshal positive integer into Go value of type string",
+		},
+		{
+			name:      "decode CBOR map[string]int to Go map[string]int",
+			opts:      decOptionsMapStringIntType,
+			cborData:  cborDataMapStringInt,
+			wantValue: map[string]int{"a": 1, "b": 2},
+		},
+		{
+			name:     "decode CBOR array of map[string]int to Go []map[string]int",
+			opts:     decOptionsMapStringIntType,
+			cborData: cborDataArrayOfMapStringint,
+			wantValue: []interface{}{
+				map[string]int{"a": 1, "b": 2},
+				map[string]int{"c": 3, "d": 4},
+			},
+		},
+		{
+			name:         "decode CBOR nested map to Go map[string]int",
+			opts:         decOptionsMapStringIntType,
+			cborData:     cborDataNestedMap,
+			wantErrorMsg: "cbor: cannot unmarshal map into Go value of type int",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			decMode, _ := tc.opts.DecMode()
+
+			var v interface{}
+			err := decMode.Unmarshal(tc.cborData, &v)
+			if err != nil {
+				if tc.wantErrorMsg == "" {
+					t.Errorf("Unmarshal(0x%x) to empty interface returned error %v", tc.cborData, err)
+				} else if tc.wantErrorMsg != err.Error() {
+					t.Errorf("Unmarshal(0x%x) error %q, want %q", tc.cborData, err.Error(), tc.wantErrorMsg)
+				}
+			} else {
+				if tc.wantValue == nil {
+					t.Errorf("Unmarshal(0x%x) = %v (%T), want error %q", tc.cborData, v, v, tc.wantErrorMsg)
+				} else if !reflect.DeepEqual(v, tc.wantValue) {
+					t.Errorf("Unmarshal(0x%x) = %v (%T), want %v (%T)", tc.cborData, v, v, tc.wantValue, tc.wantValue)
+				}
+			}
+		})
 	}
 }
