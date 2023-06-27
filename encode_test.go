@@ -2857,6 +2857,51 @@ func TestInvalidInfConvert(t *testing.T) {
 	}
 }
 
+func TestNilContainers(t *testing.T) {
+	nilContainersNull := EncOptions{NilContainers: NilContainerAsNull}
+	nilContainersEmpty := EncOptions{NilContainers: NilContainerAsEmpty}
+
+	testCases := []struct {
+		name         string
+		v            interface{}
+		opts         EncOptions
+		wantCborData []byte
+	}{
+		{"map(nil) as CBOR null", map[string]string(nil), nilContainersNull, hexDecode("f6")},
+		{"map(nil) as CBOR empty map", map[string]string(nil), nilContainersEmpty, hexDecode("a0")},
+
+		{"slice(nil) as CBOR null", []int(nil), nilContainersNull, hexDecode("f6")},
+		{"slice(nil) as CBOR empty array", []int(nil), nilContainersEmpty, hexDecode("80")},
+
+		{"[]byte(nil) as CBOR null", []byte(nil), nilContainersNull, hexDecode("f6")},
+		{"[]byte(nil) as CBOR empty bytestring", []byte(nil), nilContainersEmpty, hexDecode("40")},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			em, err := tc.opts.EncMode()
+			if err != nil {
+				t.Errorf("EncMode() returned an error %v", err)
+			}
+			b, err := em.Marshal(tc.v)
+			if err != nil {
+				t.Errorf("Marshal(%v) returned error %v", tc.v, err)
+			} else if !bytes.Equal(b, tc.wantCborData) {
+				t.Errorf("Marshal(%v) = 0x%x, want 0x%x", tc.v, b, tc.wantCborData)
+			}
+		})
+	}
+}
+
+func TestInvalidNilContainers(t *testing.T) {
+	wantErrorMsg := "cbor: invalid NilContainers 100"
+	_, err := EncOptions{NilContainers: NilContainersMode(100)}.EncMode()
+	if err == nil {
+		t.Errorf("EncMode() didn't return an error")
+	} else if err.Error() != wantErrorMsg {
+		t.Errorf("EncMode() returned error %q, want %q", err.Error(), wantErrorMsg)
+	}
+}
+
 // Keith Randall's workaround for constant propagation issue https://github.com/golang/go/issues/36400
 const (
 	// qnan 32 bits constants
@@ -3311,6 +3356,7 @@ func TestEncOptions(t *testing.T) {
 		Time:          TimeRFC3339Nano,
 		TimeTag:       EncTagRequired,
 		IndefLength:   IndefLengthForbidden,
+		NilContainers: NilContainerAsNull,
 		TagsMd:        TagsAllowed,
 	}
 	em, err := opts1.EncMode()
