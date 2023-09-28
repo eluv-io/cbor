@@ -1595,13 +1595,13 @@ func (d *decoder) parseArrayToStruct(v reflect.Value, tInfo *typeInfo) error {
 	if !hasSize {
 		count = d.numOfItemsUntilBreak() // peek ahead to get array size
 	}
-	if count != len(structType.fields) {
+	if count > len(structType.fields) {
 		d.off = start
 		d.skip()
 		return &UnmarshalTypeError{
 			CBORType: t.String(),
 			GoType:   tInfo.typ.String(),
-			errorMsg: "cannot decode CBOR array to struct with different number of elements",
+			errorMsg: fmt.Sprintf("cannot decode CBOR array of len [%d] to struct with [%d] elements", count, len(structType.fields)),
 		}
 	}
 	var err, lastErr error
