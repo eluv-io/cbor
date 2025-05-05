@@ -4504,29 +4504,30 @@ func TestEncOptionsTagsForbidden(t *testing.T) {
 
 func TestEncOptions(t *testing.T) {
 	opts1 := EncOptions{
-		Sort:                 SortBytewiseLexical,
-		ShortestFloat:        ShortestFloat16,
-		NaNConvert:           NaNConvertPreserveSignal,
-		InfConvert:           InfConvertNone,
-		BigIntConvert:        BigIntConvertNone,
-		Time:                 TimeRFC3339Nano,
-		TimeTag:              EncTagRequired,
-		IndefLength:          IndefLengthForbidden,
-		NilContainers:        NilContainerAsEmpty,
-		TagsMd:               TagsAllowed,
-		OmitEmpty:            OmitEmptyGoValue,
-		String:               StringToByteString,
-		FieldName:            FieldNameToByteString,
-		ByteSliceLaterFormat: ByteSliceLaterFormatBase16,
-		ByteArray:            ByteArrayToArray,
-		BinaryMarshaler:      BinaryMarshalerNone,
+		Sort:                  SortBytewiseLexical,
+		ShortestFloat:         ShortestFloat16,
+		NaNConvert:            NaNConvertPreserveSignal,
+		InfConvert:            InfConvertNone,
+		BigIntConvert:         BigIntConvertNone,
+		Time:                  TimeRFC3339Nano,
+		TimeTag:               EncTagRequired,
+		IndefLength:           IndefLengthForbidden,
+		NilContainers:         NilContainerAsEmpty,
+		TagsMd:                TagsAllowed,
+		HandleTagForMarshaler: false,
+		OmitEmpty:             OmitEmptyGoValue,
+		String:                StringToByteString,
+		FieldName:             FieldNameToByteString,
+		ByteSliceLaterFormat:  ByteSliceLaterFormatBase16,
+		ByteArray:             ByteArrayToArray,
+		BinaryMarshaler:       BinaryMarshalerNone,
 	}
 	ov := reflect.ValueOf(opts1)
 	for i := 0; i < ov.NumField(); i++ {
 		fv := ov.Field(i)
 		if fv.IsZero() {
 			fn := ov.Type().Field(i).Name
-			if fn == "TagsMd" {
+			if fn == "TagsMd" || fn == "HandleTagForMarshaler" {
 				// Roundtripping non-zero values for TagsMd is tested separately
 				// since the non-zero value (TagsForbidden) is incompatible with the
 				// non-zero value for other options (e.g. TimeTag).

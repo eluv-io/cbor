@@ -4918,6 +4918,7 @@ func TestDecOptions(t *testing.T) {
 		ExtraReturnErrors:        ExtraDecErrorUnknownField,
 		DefaultMapType:           reflect.TypeOf(map[string]any(nil)),
 		UTF8:                     UTF8DecodeInvalid,
+		HandleTagForUnmarshaler:  true,
 		FieldNameMatching:        FieldNameMatchingCaseSensitive,
 		BigIntDec:                BigIntDecodePointer,
 		DefaultByteStringType:    reflect.TypeOf(""),

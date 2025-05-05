@@ -293,24 +293,51 @@ func (icm InfConvertMode) valid() bool {
 	return icm >= 0 && icm < maxInfConvert
 }
 
-// TimeMode specifies how to encode time.Time values.
+// TimeMode specifies how to encode time.Time values in compliance with RFC 8949 (CBOR):
+// - Section 3.4.1: Standard Date/Time String
+// - Section 3.4.2: Epoch-Based Date/Time
+// For more info, see:
+// - https://www.rfc-editor.org/rfc/rfc8949.html
+// NOTE: User applications that prefer to encode time with fractional seconds to an integer
+// (instead of floating point or text string) can use a CBOR tag number not assigned by IANA:
+//  1. Define a user-defined type in Go with just a time.Time or int64 as its data.
+//  2. Implement the cbor.Marshaler and cbor.Unmarshaler interface for that user-defined type
+//     to encode or decode the tagged data item with an enclosed integer content.
 type TimeMode int
 
 const (
-	// TimeUnix causes time.Time to be encoded as epoch time in integer with second precision.
+	// TimeUnix causes time.Time to encode to a CBOR time (tag 1) with an integer content
+	// representing seconds elapsed (with 1-second precision) since UNIX Epoch UTC.
+	// The TimeUnix option is location independent and has a clear precision guarantee.
 	TimeUnix TimeMode = iota
 
-	// TimeUnixMicro causes time.Time to be encoded as epoch time in float-point rounded to microsecond precision.
+	// TimeUnixMicro causes time.Time to encode to a CBOR time (tag 1) with a floating point content
+	// representing seconds elapsed (with up to 1-microsecond precision) since UNIX Epoch UTC.
+	// NOTE: The floating point content is encoded to the shortest floating-point encoding that preserves
+	// the 64-bit floating point value. I.e., the floating point encoding can be IEEE 764:
+	// binary64, binary32, or binary16 depending on the content's value.
 	TimeUnixMicro
 
-	// TimeUnixDynamic causes time.Time to be encoded as integer if time.Time doesn't have fractional seconds,
-	// otherwise float-point rounded to microsecond precision.
+	// TimeUnixDynamic causes time.Time to encode to a CBOR time (tag 1) with either an integer content or
+	// or a floating point content, depending on the content's value.  This option is equivalent to dynamically
+	// choosing TimeUnix if time.Time doesn't have fractional seconds, and using TimeUnixMicro if time.Time
+	// has fractional seconds.
 	TimeUnixDynamic
 
-	// TimeRFC3339 causes time.Time to be encoded as RFC3339 formatted string with second precision.
+	// TimeRFC3339 causes time.Time to encode to a CBOR time (tag 0) with a text string content
+	// representing the time using 1-second precision in RFC3339 format.  If the time.Time has a
+	// non-UTC timezone then a "localtime - UTC" numeric offset will be included as specified in RFC3339.
+	// NOTE: User applications can avoid including the RFC3339 numeric offset by:
+	// - providing a time.Time value set to UTC, or
+	// - using the TimeUnix, TimeUnixMicro, or TimeUnixDynamic option instead of TimeRFC3339.
 	TimeRFC3339
 
-	// TimeRFC3339Nano causes time.Time to be encoded as RFC3339 formatted string with nanosecond precision.
+	// TimeRFC3339Nano causes time.Time to encode to a CBOR time (tag 0) with a text string content
+	// representing the time using 1-nanosecond precision in RFC3339 format.  If the time.Time has a
+	// non-UTC timezone then a "localtime - UTC" numeric offset will be included as specified in RFC3339.
+	// NOTE: User applications can avoid including the RFC3339 numeric offset by:
+	// - providing a time.Time value set to UTC, or
+	// - using the TimeUnix, TimeUnixMicro, or TimeUnixDynamic option instead of TimeRFC3339Nano.
 	TimeRFC3339Nano
 
 	maxTimeMode
@@ -516,6 +543,12 @@ type EncOptions struct {
 
 	// TagsMd specifies whether to allow CBOR tags (major type 6).
 	TagsMd TagsMode
+
+	// HandleTagForMarshaler activates automatic handling of CBOR tags for types implementing the Marshaler interface.
+	// By default, a Marshaler is expected to write CBOR tags itself in its MarshalCBOR() method. Setting this option to
+	// true instructs the encoder to write the tags if required by the configured TagSet (just as it is done for all
+	// types that don't implement the Marshaler interface).
+	HandleTagForMarshaler bool
 
 	// OmitEmptyMode specifies how to encode struct fields with omitempty tag.
 	OmitEmpty OmitEmptyMode
@@ -761,6 +794,7 @@ func (opts EncOptions) encMode() (*encMode, error) { //nolint:gocritic // ignore
 		indefLength:               opts.IndefLength,
 		nilContainers:             opts.NilContainers,
 		tagsMd:                    opts.TagsMd,
+		handleTagForMarshaler:     opts.HandleTagForMarshaler,
 		omitEmpty:                 opts.OmitEmpty,
 		stringType:                opts.String,
 		stringMajorType:           stringMajorType,
@@ -807,6 +841,7 @@ type encMode struct {
 	indefLength               IndefLengthMode
 	nilContainers             NilContainersMode
 	tagsMd                    TagsMode
+	handleTagForMarshaler     bool
 	omitEmpty                 OmitEmptyMode
 	stringType                StringMode
 	stringMajorType           cborType
@@ -891,22 +926,23 @@ func getMarshalerDecMode(indefLength IndefLengthMode, tagsMd TagsMode) *decMode 
 // EncOptions returns user specified options used to create this EncMode.
 func (em *encMode) EncOptions() EncOptions {
 	return EncOptions{
-		Sort:                 em.sort,
-		ShortestFloat:        em.shortestFloat,
-		NaNConvert:           em.nanConvert,
-		InfConvert:           em.infConvert,
-		BigIntConvert:        em.bigIntConvert,
-		Time:                 em.time,
-		TimeTag:              em.timeTag,
-		IndefLength:          em.indefLength,
-		NilContainers:        em.nilContainers,
-		TagsMd:               em.tagsMd,
-		OmitEmpty:            em.omitEmpty,
-		String:               em.stringType,
-		FieldName:            em.fieldName,
-		ByteSliceLaterFormat: em.byteSliceLaterFormat,
-		ByteArray:            em.byteArray,
-		BinaryMarshaler:      em.binaryMarshaler,
+		Sort:                  em.sort,
+		ShortestFloat:         em.shortestFloat,
+		NaNConvert:            em.nanConvert,
+		InfConvert:            em.infConvert,
+		BigIntConvert:         em.bigIntConvert,
+		Time:                  em.time,
+		TimeTag:               em.timeTag,
+		IndefLength:           em.indefLength,
+		NilContainers:         em.nilContainers,
+		TagsMd:                em.tagsMd,
+		HandleTagForMarshaler: em.handleTagForMarshaler,
+		OmitEmpty:             em.omitEmpty,
+		String:                em.stringType,
+		FieldName:             em.fieldName,
+		ByteSliceLaterFormat:  em.byteSliceLaterFormat,
+		ByteArray:             em.byteArray,
+		BinaryMarshaler:       em.binaryMarshaler,
 	}
 }
 
@@ -1699,6 +1735,11 @@ func encodeMarshalerType(e *bytes.Buffer, em *encMode, v reflect.Value) error {
 	data, err := m.MarshalCBOR()
 	if err != nil {
 		return err
+	}
+	if em.handleTagForMarshaler {
+		if b := em.encTagBytes(v.Type()); b != nil {
+			e.Write(b)
+		}
 	}
 
 	// Verify returned CBOR data item from MarshalCBOR() is well-formed and passes tag validity for builtin tags 0-3.

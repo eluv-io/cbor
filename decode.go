@@ -388,7 +388,7 @@ const (
 	// - return UnmarshalTypeError if value doesn't fit into int64
 	IntDecConvertSignedOrFail
 
-	// IntDecConvertSigned affects how CBOR integers (major type 0 and 1) decode to Go interface{}.
+	// IntDecConvertSignedOrBigInt affects how CBOR integers (major type 0 and 1) decode to Go interface{}.
 	// It makes CBOR integers (major type 0 and 1) decode to:
 	// - int64 if value fits
 	// - big.Int or *big.Int (see BigIntDecMode) if value doesn't fit into int64
@@ -800,7 +800,7 @@ type DecOptions struct {
 	// TagsMd specifies whether to allow CBOR tags (major type 6).
 	TagsMd TagsMode
 
-	// IntDec specifies which Go integer type (int64 or uint64) to use
+	// IntDec specifies which Go integer type (int64, uint64, or [big.Int]) to use
 	// when decoding CBOR int (major type 0 and 1) to Go interface{}.
 	IntDec IntDecMode
 
@@ -821,6 +821,12 @@ type DecOptions struct {
 	// UTF8 specifies if decoder should decode CBOR Text containing invalid UTF-8.
 	// By default, unmarshal rejects CBOR text containing invalid UTF-8.
 	UTF8 UTF8Mode
+
+	// HandleTagForUnmarshaler activates automatic handling of CBOR tags for types implementing the Unmarshaler
+	// interface. By default, an Unmarshaler is expected to read CBOR tags itself in its UnmarshalCBOR() method. Setting
+	// this option to true instructs the decoder to consume the tags if required by the configured TagSet (just as it is
+	// done for all types that don't implement the Unmarshaler interface).
+	HandleTagForUnmarshaler bool
 
 	// FieldNameMatching specifies how string keys in CBOR maps are matched to Go struct field names.
 	FieldNameMatching FieldNameMatchingMode
@@ -1113,6 +1119,7 @@ func (opts DecOptions) decMode() (*decMode, error) { //nolint:gocritic // ignore
 		extraReturnErrors:        opts.ExtraReturnErrors,
 		defaultMapType:           opts.DefaultMapType,
 		utf8:                     opts.UTF8,
+		handleTagForUnmarshaler:  opts.HandleTagForUnmarshaler,
 		fieldNameMatching:        opts.FieldNameMatching,
 		bigIntDec:                opts.BigIntDec,
 		defaultByteStringType:    opts.DefaultByteStringType,
@@ -1198,6 +1205,7 @@ type decMode struct {
 	extraReturnErrors        ExtraDecErrorCond
 	defaultMapType           reflect.Type
 	utf8                     UTF8Mode
+	handleTagForUnmarshaler  bool
 	fieldNameMatching        FieldNameMatchingMode
 	bigIntDec                BigIntDecMode
 	defaultByteStringType    reflect.Type
@@ -1238,6 +1246,7 @@ func (dm *decMode) DecOptions() DecOptions {
 		ExtraReturnErrors:        dm.extraReturnErrors,
 		DefaultMapType:           dm.defaultMapType,
 		UTF8:                     dm.utf8,
+		HandleTagForUnmarshaler:  dm.handleTagForUnmarshaler,
 		FieldNameMatching:        dm.fieldNameMatching,
 		BigIntDec:                dm.bigIntDec,
 		DefaultByteStringType:    dm.defaultByteStringType,
@@ -1492,6 +1501,15 @@ func (d *decoder) parseToValue(v reflect.Value, tInfo *typeInfo) error { //nolin
 			return nil
 
 		case specialTypeUnmarshalerIface:
+			if d.dm.handleTagForUnmarshaler {
+				err := d.checkRegisteredTag(tInfo)
+				if err != nil {
+					return err
+				}
+				if d.nextCBORType() == cborTypeTag {
+					d.getHead() // consume CBOR tag
+				}
+			}
 			return d.parseToUnmarshaler(v)
 
 		case specialTypeUnexportedUnmarshalerIface:
@@ -1499,21 +1517,9 @@ func (d *decoder) parseToValue(v reflect.Value, tInfo *typeInfo) error { //nolin
 		}
 	}
 
-	// Check registered tag number
-	if tagItem := d.getRegisteredTagItem(tInfo.nonPtrType); tagItem != nil {
-		t := d.nextCBORType()
-		if t != cborTypeTag {
-			if tagItem.opts.DecTag == DecTagRequired {
-				d.skip() // Required tag number is absent, skip entire tag
-				return &UnmarshalTypeError{
-					CBORType: t.String(),
-					GoType:   tInfo.typ.String(),
-					errorMsg: "expect CBOR tag value"}
-			}
-		} else if err := d.validRegisteredTagNums(tagItem); err != nil {
-			d.skip() // Skip tag content
-			return err
-		}
+	err := d.checkRegisteredTag(tInfo)
+	if err != nil {
+		return err
 	}
 
 	t := d.nextCBORType()
@@ -1679,6 +1685,25 @@ func (d *decoder) parseToValue(v reflect.Value, tInfo *typeInfo) error { //nolin
 		return &UnmarshalTypeError{CBORType: t.String(), GoType: tInfo.nonPtrType.String()}
 	}
 
+	return nil
+}
+
+func (d *decoder) checkRegisteredTag(tInfo *typeInfo) error {
+	if tagItem := d.getRegisteredTagItem(tInfo.nonPtrType); tagItem != nil {
+		t := d.nextCBORType()
+		if t != cborTypeTag {
+			if tagItem.opts.DecTag == DecTagRequired {
+				d.skip() // Required tag number is absent, skip entire tag
+				return &UnmarshalTypeError{
+					CBORType: t.String(),
+					GoType:   tInfo.typ.String(),
+					errorMsg: "expect CBOR tag value"}
+			}
+		} else if err := d.validRegisteredTagNums(tagItem); err != nil {
+			d.skip() // Skip tag content
+			return err
+		}
+	}
 	return nil
 }
 
@@ -2547,13 +2572,13 @@ func (d *decoder) parseArrayToStruct(v reflect.Value, tInfo *typeInfo) error {
 	if !hasSize {
 		count = d.numOfItemsUntilBreak() // peek ahead to get array size
 	}
-	if count != len(structType.fields) {
+	if count > len(structType.fields) {
 		d.off = start
 		d.skip()
 		return &UnmarshalTypeError{
 			CBORType: cborTypeArray.String(),
 			GoType:   tInfo.typ.String(),
-			errorMsg: "cannot decode CBOR array to struct with different number of elements",
+			errorMsg: fmt.Sprintf("cannot decode CBOR array of len [%d] to struct with [%d] elements", count, len(structType.fields)),
 		}
 	}
 	var err, lastErr error
