@@ -16,10 +16,10 @@ on:
     branches: [main, master]
 
 env:
-  GO_VERSION: '1.22'
-  GOLINTERS_VERSION: 1.59.1
+  GO_VERSION: '1.25'
+  GOLINTERS_VERSION: 2.10.1
   GOLINTERS_ARCH: linux-amd64
-  GOLINTERS_TGZ_DGST: c30696f1292cff8778a495400745f0f9c0406a3f38d8bb12cef48d599f6c7791
+  GOLINTERS_TGZ_DGST: dfa775874cf0561b404a02a8f4481fc69b28091da95aa697259820d429b09c99
   GOLINTERS_TIMEOUT: 15m
   OPENSSL_DGST_CMD: openssl dgst -sha256 -r
   CURL_CMD: curl --proto =https --tlsv1.2 --location --silent --show-error --fail
@@ -36,12 +36,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 1
 
       - name: Setup Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
