@@ -769,6 +769,31 @@ func (tum TextUnmarshalerMode) valid() bool {
 	return tum >= 0 && tum < maxTextUnmarshalerMode
 }
 
+// FloatToIntMode specifies how to decode float into integer types when decoding
+// into structs with integer fields as it may happen when the cbor was encoded
+// from a JSON decoded structure.
+type FloatToIntMode int
+
+const (
+	// FloatToIntNone disallows conversion
+	FloatToIntNone FloatToIntMode = iota
+
+	// FloatToIntExact allows conversion, provided accuracy is exact.
+	FloatToIntExact FloatToIntMode = iota
+
+	// FloatToIntLenient allows conversion even if accuracy is not exact. This
+	// may be useful in round trips from JSON with large int64/uint64 values.
+	// This results in a behavior similar to an encoding/json decoder not using
+	// the 'UseNumber' configuration.
+	FloatToIntLenient
+
+	maxFloatToIntMode
+)
+
+func (fti FloatToIntMode) valid() bool {
+	return fti >= 0 && fti < maxFloatToIntMode
+}
+
 // DecOptions specifies decoding options.
 type DecOptions struct {
 	// DupMapKey specifies whether to enforce duplicate map key.
@@ -918,6 +943,13 @@ type DecOptions struct {
 	// implement json.Unmarshaler but do not also implement cbor.Unmarshaler. If nil, decoding
 	// behavior is not influenced by whether or not a type implements json.Unmarshaler.
 	JSONUnmarshalerTranscoder Transcoder
+
+	// FloatToInt specifies whether conversion from float to int has to be exact.
+	// Default value (FloatToIntNone) does not allow conversion
+	// FloatToIntExact requires 'exact' conversion, while
+	// FloatToIntLenient enables lenient conversion similar to the behavior of
+	// encoding/json when not using 'UseNumber'.
+	FloatToInt FloatToIntMode
 }
 
 // DecMode returns DecMode with immutable options and no tags (safe for concurrency).
@@ -1134,6 +1166,10 @@ func (opts DecOptions) decMode() (*decMode, error) { //nolint:gocritic // ignore
 		return nil, errors.New("cbor: invalid TextUnmarshaler " + strconv.Itoa(int(opts.TextUnmarshaler)))
 	}
 
+	if !opts.FloatToInt.valid() {
+		return nil, errors.New("cbor: invalid FloatToInt " + strconv.Itoa(int(opts.FloatToInt)))
+	}
+
 	dm := decMode{
 		dupMapKey:                 opts.DupMapKey,
 		timeTag:                   opts.TimeTag,
@@ -1164,6 +1200,7 @@ func (opts DecOptions) decMode() (*decMode, error) { //nolint:gocritic // ignore
 		binaryUnmarshaler:         opts.BinaryUnmarshaler,
 		textUnmarshaler:           opts.TextUnmarshaler,
 		jsonUnmarshalerTranscoder: opts.JSONUnmarshalerTranscoder,
+		floatToInt:                opts.FloatToInt,
 	}
 
 	return &dm, nil
@@ -1246,6 +1283,7 @@ type decMode struct {
 	binaryUnmarshaler         BinaryUnmarshalerMode
 	textUnmarshaler           TextUnmarshalerMode
 	jsonUnmarshalerTranscoder Transcoder
+	floatToInt                FloatToIntMode
 }
 
 var defaultDecMode, _ = DecOptions{}.decMode()
@@ -1289,6 +1327,7 @@ func (dm *decMode) DecOptions() DecOptions {
 		BinaryUnmarshaler:         dm.binaryUnmarshaler,
 		TextUnmarshaler:           dm.textUnmarshaler,
 		JSONUnmarshalerTranscoder: dm.jsonUnmarshalerTranscoder,
+		FloatToInt:                dm.floatToInt,
 	}
 }
 
@@ -1590,15 +1629,15 @@ func (d *decoder) parseToValue(v reflect.Value, tInfo *typeInfo) error { //nolin
 		switch ai {
 		case additionalInformationAsFloat16:
 			f := float64(float16.Frombits(uint16(val)).Float32()) //nolint:gosec
-			return fillFloat(t, f, v)
+			return fillFloat(t, f, v, d.dm.floatToInt)
 
 		case additionalInformationAsFloat32:
 			f := float64(math.Float32frombits(uint32(val))) //nolint:gosec
-			return fillFloat(t, f, v)
+			return fillFloat(t, f, v, d.dm.floatToInt)
 
 		case additionalInformationAsFloat64:
 			f := math.Float64frombits(val)
-			return fillFloat(t, f, v)
+			return fillFloat(t, f, v, d.dm.floatToInt)
 
 		default: // ai <= 24
 			if d.dm.simpleValues.rejected[SimpleValue(val)] { //nolint:gosec
@@ -1677,6 +1716,54 @@ func (d *decoder) parseToValue(v reflect.Value, tInfo *typeInfo) error { //nolin
 				defer func() {
 					d.expectedLaterEncodingTags = d.expectedLaterEncodingTags[:len(d.expectedLaterEncodingTags)-1]
 				}()
+			}
+
+		case tagNumJsonNumber:
+			num := ""
+			jt := d.nextCBORType()
+			switch jt {
+			case cborTypeByteString:
+				b, _ := d.parseByteString()
+				num = string(b)
+			case cborTypeTextString:
+				b, _ := d.parseTextString()
+				num = string(b)
+			}
+			if num != "" {
+				switch v.Kind() {
+				case reflect.Int, reflect.Int64, reflect.Int32, reflect.Int16, reflect.Int8:
+					iv, err := strconv.ParseInt(num, 10, 64)
+					if err != nil {
+						return &UnmarshalTypeError{
+							CBORType: t.String(),
+							GoType:   tInfo.nonPtrType.String(),
+							errorMsg: num + " cannot be parsed as " + v.Type().String() + ": " + err.Error(),
+						}
+					}
+					return fillNegativeInt(jt, iv, v)
+
+				case reflect.Uint, reflect.Uint64, reflect.Uint32, reflect.Uint16, reflect.Uint8:
+					iv, err := strconv.ParseUint(num, 10, 64)
+					if err != nil {
+						return &UnmarshalTypeError{
+							CBORType: t.String(),
+							GoType:   tInfo.nonPtrType.String(),
+							errorMsg: num + " cannot be parsed as " + v.Type().String() + ": " + err.Error(),
+						}
+					}
+					return fillPositiveInt(jt, iv, v)
+
+				case reflect.Float32, reflect.Float64:
+					fv, err := strconv.ParseFloat(num, 64)
+					if err != nil {
+						return &UnmarshalTypeError{
+							CBORType: t.String(),
+							GoType:   tInfo.nonPtrType.String(),
+							errorMsg: num + " cannot be parsed as " + v.Type().String() + ": " + err.Error(),
+						}
+					}
+					return fillFloat(jt, fv, v, d.dm.floatToInt)
+				}
 			}
 		}
 
@@ -3169,7 +3256,7 @@ func fillBool(t cborType, val bool, v reflect.Value) error {
 	return &UnmarshalTypeError{CBORType: t.String(), GoType: v.Type().String()}
 }
 
-func fillFloat(t cborType, val float64, v reflect.Value) error {
+func fillFloat(t cborType, val float64, v reflect.Value, mode FloatToIntMode) error {
 	switch v.Kind() {
 	case reflect.Float32, reflect.Float64:
 		if v.OverflowFloat(val) {
@@ -3181,6 +3268,54 @@ func fillFloat(t cborType, val float64, v reflect.Value) error {
 		}
 		v.SetFloat(val)
 		return nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if mode != FloatToIntNone {
+			var ival int64
+			ok := false
+			if !math.IsNaN(val) { // NewFloat panics with NaN
+				fl := big.NewFloat(val)
+				if fl.IsInt() {
+					var acc big.Accuracy
+					ival, acc = fl.Int64()
+					ok = acc == big.Exact || mode == FloatToIntLenient
+				}
+			}
+			if ok {
+				if v.OverflowInt(ival) {
+					return &UnmarshalTypeError{
+						CBORType: t.String(),
+						GoType:   v.Type().String(),
+						errorMsg: strconv.FormatFloat(val, 'E', -1, 64) + " overflows " + v.Type().String(),
+					}
+				}
+				v.SetInt(ival)
+				return nil
+			}
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if mode != FloatToIntNone {
+			var ival uint64
+			ok := false
+			if !math.IsNaN(val) { // NewFloat panics with NaN
+				fl := big.NewFloat(val)
+				if fl.IsInt() {
+					var acc big.Accuracy
+					ival, acc = fl.Uint64()
+					ok = acc == big.Exact || mode == FloatToIntLenient
+				}
+			}
+			if ok {
+				if v.OverflowUint(ival) {
+					return &UnmarshalTypeError{
+						CBORType: t.String(),
+						GoType:   v.Type().String(),
+						errorMsg: strconv.FormatFloat(val, 'E', -1, 64) + " overflows " + v.Type().String(),
+					}
+				}
+				v.SetUint(ival)
+				return nil
+			}
+		}
 	}
 	return &UnmarshalTypeError{CBORType: t.String(), GoType: v.Type().String()}
 }
