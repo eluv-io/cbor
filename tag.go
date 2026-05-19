@@ -155,6 +155,7 @@ type TagSet interface {
 	Add(opts TagOptions, contentType reflect.Type, num uint64, nestedNum ...uint64) error
 
 	// Remove removes given tag content type from TagSet.
+	// Remove is a no-op if contentType is nil.
 	Remove(contentType reflect.Type)
 
 	tagProvider
@@ -182,7 +183,7 @@ func (t *tagItem) equalTagNum(num []uint64) bool {
 		return false
 	}
 
-	for i := 0; i < len(t.num); i++ {
+	for i := range len(t.num) {
 		if t.num[i] != num[i] {
 			return false
 		}
@@ -245,7 +246,11 @@ func (t *syncTagSet) Add(opts TagOptions, contentType reflect.Type, num uint64, 
 }
 
 // Remove removes given tag content type from TagSet.
+// Remove is a no-op if contentType is nil.
 func (t *syncTagSet) Remove(contentType reflect.Type) {
+	if contentType == nil {
+		return
+	}
 	for contentType.Kind() == reflect.Pointer {
 		contentType = contentType.Elem()
 	}
@@ -313,8 +318,8 @@ func newTagItem(opts TagOptions, contentType reflect.Type, num uint64, nestedNum
 }
 
 var (
-	typeTag    = reflect.TypeOf(Tag{})
-	typeRawTag = reflect.TypeOf(RawTag{})
+	typeTag    = reflect.TypeFor[Tag]()
+	typeRawTag = reflect.TypeFor[RawTag]()
 )
 
 // WrongTagError describes mismatch between CBOR tag and registered tag.
